@@ -48,13 +48,14 @@ def test(args, T, dqn, val_mem, evaluate=False):
     Qs.append(T_Qs)
 
     # Plot
-    _plot_line(Ts, rewards, 'Reward', path='results')
-    _plot_line(Ts, Qs, 'Q', path='results')
+    (args.tmpdir / 'results').mkdir(exist_ok=True, parents=True)
+    _plot_line(Ts, rewards, 'Reward', path=args.tmpdir / 'results')
+    _plot_line(Ts, Qs, 'Q', path=args.tmpdir / 'results')
 
     # Save model parameters if improved
     if avg_reward > best_avg_reward:
       best_avg_reward = avg_reward
-      dqn.save('results')
+      dqn.save(args.tmpdir / 'results')
 
   # Return average reward and Q-value
   return avg_reward, avg_Q

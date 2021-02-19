@@ -3,6 +3,9 @@ from datetime import datetime
 import atari_py
 import numpy as np
 import torch
+import shutil
+from pathlib import Path
+from hashlib import blake2b
 
 from agent import Agent
 from env import Env
@@ -42,10 +45,33 @@ parser.add_argument('--evaluation-episodes', type=int, default=10, metavar='N', 
 parser.add_argument('--evaluation-size', type=int, default=500, metavar='N', help='Number of transitions to use for validating Q')
 parser.add_argument('--render', action='store_true', help='Display screen (testing only)')
 parser.add_argument('--enable-cudnn', action='store_true', help='Enable cuDNN (faster but nondeterministic)')
+# Added by me
+parser.add_argument('--tmpdir', type=str, default='./', help='Path to save outputs')
+parser.add_argument('--finaldir', type=str, default='./', help='Path to save outputs')
+parser.add_argument('--ckpt_freq',type=int, default=0, help='Checkpointing period. Checkpointing disabled if 0.')
+
+
+
+# Creating an id for the run
+args = parser.parse_args()
+ba = bytearray(str(args), encoding='utf8')
+h = blake2b(digest_size=20)
+args.hex = h.hexdigest()
+
+# Logging, checkpointing and IO management
+args.tmpdir = Path(args.tmpdir) / args.hex
+args.tmpdir.mkdir(parents=True, exist_ok=True)
+ckptdir = Path(args.finaldir) / 'running' / args.hex
+args.finaldir = Path(args.finaldir) / f"{str(datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))}_{args.hex}"
+
+def save_weights(args, ckptdir):  
+  weights_files = args.tmpdir.glob('pen_weights_*.pt')
+  for fname in weights_files:
+    if not (ckptdir / fname).exists():
+      shutil.copyfile(args.tmpdir / fname, ckptdir / fname)
 
 
 # Setup
-args = parser.parse_args()
 print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
   print(' ' * 26 + k + ': ' + str(v))
@@ -58,36 +84,51 @@ if torch.cuda.is_available() and not args.disable_cuda:
 else:
   args.device = torch.device('cpu')
 
-
 # Simple ISO 8601 timestamped logger
 def log(s):
   print('[' + str(datetime.now().strftime('%Y-%m-%dT%H:%M:%S')) + '] ' + s)
-
 
 # Environment
 env = Env(args)
 env.train()
 action_space = env.action_space()
 
+# Checkpointing management
+if ckptdir.exists() and args.ckpt_freq:  # Do checkpointing
+  ckpt = torch.load(ckptdir / 'last_ckpt.tar')
+  # Agent
+  dqn = Agent(args, env)
+  dqn.online_net.load_state_dict(ckpt['online_net'])
+  dqn.target_net.load_state_dict(ckpt['target_net'])
+  dqn.optimiser.load_state_dict(ckpt['optimiser'])
+  mem = ckpt['replay_mem']
+  priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
-# Agent
-dqn = Agent(args, env)
-mem = ReplayMemory(args, args.memory_capacity)
-priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
+  # Construct validation memory
+  val_mem = ckpt['val_mem']
+  T_init, done = ckpt['T']+1, True
+  log(f"Checkpoint successfully loaded at T={T_init}")
+else:
+  # Agent
+  dqn = Agent(args, env)
+  mem = ReplayMemory(args, args.memory_capacity)
+  priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
+  # Construct validation memory
+  val_mem = ReplayMemory(args, args.evaluation_size)
+  T, done = 0, True
 
-# Construct validation memory
-val_mem = ReplayMemory(args, args.evaluation_size)
-T, done = 0, True
-while T < args.evaluation_size:
-  if done:
-    state, done = env.reset(), False
+  while T < args.evaluation_size:
+    if done:
+      state, done = env.reset(), False
 
-  next_state, _, done = env.step(np.random.randint(0, action_space))
-  val_mem.append(state, None, None, done)
-  state = next_state
-  T += 1
+    next_state, _, done = env.step(np.random.randint(0, action_space))
+    val_mem.append(state, None, None, done)
+    state = next_state
+    T += 1
 
+  T_init, done = 0, True
+    
 if args.evaluate:
   dqn.eval()  # Set DQN (online network) to evaluation mode
   avg_reward, avg_Q = test(args, 0, dqn, val_mem, evaluate=True)  # Test
@@ -95,8 +136,7 @@ if args.evaluate:
 else:
   # Training loop
   dqn.train()
-  T, done = 0, True
-  for T in tqdm(range(args.T_max)):
+  for T in tqdm(range(T_init, args.T_max)):
     if done:
       state, done = env.reset(), False
 
@@ -128,4 +168,33 @@ else:
 
     state = next_state
 
+    # Saving the penultimate weight matrix every 100k iterations, and checkpoints
+    if T % 100000 == 0:
+      torch.save(dqn.online_net.fc_h_v.weight_mu, args.tmpdir / f'pen_weights_{T}.pt')
+
+    if T % args.ckpt_freq == 0:  # Every 10 million steps. Checkpointing, save directly to f"{args.finaldir}/running/"
+      ckptdir.mkdir(parents=True, exist_ok=True)
+      torch.save({
+        'online_net': dqn.online_net.state_dict(),
+        'target_net': dqn.target_net.state_dict(),
+        'optimiser': dqn.optimiser.state_dict(),
+        'replay_mem': mem,
+        'val_mem': val_mem,
+        'T': T
+      }, ckptdir / 'last_ckpt.tar')
+
+      save_weights(args, ckptdir)  # Also copy the weights toward the ckptdir.
+      log("Checkpoint successfully saved")
+    T += 1
+
 env.close()
+
+# Copy intermediate results to finaldir.
+torch.save(dqn, ckptdir / "final_dqn.pt")  # Save trained agent
+save_weights(args, ckptdir)
+shutil.copytree(ckptdir, args.finaldir)
+if (args.tmpdir / 'results').exists():
+  shutil.copytree(args.tmpdir / 'results', args.finaldir / 'results')
+
+# Finally remove the running folder
+shutil.rmtree(ckptdir)
