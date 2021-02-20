@@ -66,9 +66,9 @@ args.finaldir = Path(args.finaldir) / f"{str(datetime.now().strftime('%Y-%m-%dT%
 
 def save_weights(args, ckptdir):  
   weights_files = args.tmpdir.glob('pen_weights_*.pt')
-  for fname in weights_files:
-    if not (ckptdir / fname).exists():
-      shutil.copyfile(args.tmpdir / fname, ckptdir / fname)
+  for fpath in weights_files:
+    if not (ckptdir / fpath.name).exists():
+      shutil.copyfile(fpath, ckptdir / fpath.name)
 
 
 # Setup
@@ -172,7 +172,7 @@ else:
     if T % 100000 == 0:
       torch.save(dqn.online_net.fc_h_v.weight_mu, args.tmpdir / f'pen_weights_{T}.pt')
 
-    if T % args.ckpt_freq == 0:  # Every 10 million steps. Checkpointing, save directly to f"{args.finaldir}/running/"
+    if (T % args.ckpt_freq == 0) and T:  # Every 10 million steps. Checkpointing, save directly to f"{args.finaldir}/running/"
       ckptdir.mkdir(parents=True, exist_ok=True)
       torch.save({
         'online_net': dqn.online_net.state_dict(),
@@ -196,5 +196,6 @@ shutil.copytree(ckptdir, args.finaldir)
 if (args.tmpdir / 'results').exists():
   shutil.copytree(args.tmpdir / 'results', args.finaldir / 'results')
 
-# Finally remove the running folder
+# Finally remove the intermed. folders
 shutil.rmtree(ckptdir)
+shutil.rmtree(args.tmpdir)
