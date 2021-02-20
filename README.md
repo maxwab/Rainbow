@@ -14,6 +14,29 @@ Results and pretrained models can be found in the [releases](https://github.com/
 - [x] Distributional RL [[7]](#references)
 - [x] Noisy Nets [[8]](#references)
 
+Run the original Rainbow with the default arguments:
+
+```
+python main.py
+```
+
+Data-efficient Rainbow [[9]](#references) can be run using the following options (note that the "unbounded" memory is implemented here in practice by manually setting the memory capacity to be the same as the maximum number of timesteps):
+
+```
+python main.py --target-update 2000 \
+               --T-max 100000 \
+               --learn-start 1600 \
+               --memory-capacity 100000 \
+               --replay-frequency 1 \
+               --multi-step 20 \
+               --architecture data-efficient \
+               --hidden-size 256 \
+               --learning-rate 0.0001 \
+               --evaluation-interval 10000
+```
+
+Note that pretrained models from the [`1.3`](https://github.com/Kaixhin/Rainbow/releases/tag/1.3) release used a (slightly) incorrect network architecture. To use these, change the padding in the first convolutional layer from 0 to 1 (DeepMind uses "valid" (no) padding).
+
 Requirements
 ------------
 
@@ -46,3 +69,4 @@ References
 [6] [Reinforcement Learning: An Introduction](http://www.incompleteideas.net/sutton/book/ebook/the-book.html)  
 [7] [A Distributional Perspective on Reinforcement Learning](https://arxiv.org/abs/1707.06887)  
 [8] [Noisy Networks for Exploration](https://arxiv.org/abs/1706.10295)  
+[9] [When to Use Parametric Models in Reinforcement Learning?](https://arxiv.org/abs/1906.05243)  

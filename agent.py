@@ -1,7 +1,10 @@
+# -*- coding: utf-8 -*-
+from __future__ import division
 import os
 import numpy as np
 import torch
 from torch import optim
+from torch.nn.utils import clip_grad_norm_
 
 from model import DQN
 
@@ -17,11 +20,21 @@ class Agent():
     self.batch_size = args.batch_size
     self.n = args.multi_step
     self.discount = args.discount
+    self.norm_clip = args.norm_clip
 
     self.online_net = DQN(args, self.action_space).to(device=args.device)
-    if args.model and os.path.isfile(args.model):
-      # Always load tensors onto CPU by default, will shift to GPU if necessary
-      self.online_net.load_state_dict(torch.load(args.model, map_location='cpu'))
+    if args.model:  # Load pretrained model if provided
+      if os.path.isfile(args.model):
+        state_dict = torch.load(args.model, map_location='cpu')  # Always load tensors onto CPU by default, will shift to GPU if necessary
+        if 'conv1.weight' in state_dict.keys():
+          for old_key, new_key in (('conv1.weight', 'convs.0.weight'), ('conv1.bias', 'convs.0.bias'), ('conv2.weight', 'convs.2.weight'), ('conv2.bias', 'convs.2.bias'), ('conv3.weight', 'convs.4.weight'), ('conv3.bias', 'convs.4.bias')):
+            state_dict[new_key] = state_dict[old_key]  # Re-map state dict for old pretrained models
+            del state_dict[old_key]  # Delete old keys for strict load_state_dict
+        self.online_net.load_state_dict(state_dict)
+        print("Loading pretrained model: " + args.model)
+      else:  # Raise error if incorrect model path provided
+        raise FileNotFoundError(args.model)
+
     self.online_net.train()
 
     self.target_net = DQN(args, self.action_space).to(device=args.device)
@@ -30,7 +43,7 @@ class Agent():
     for param in self.target_net.parameters():
       param.requires_grad = False
 
-    self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.lr, eps=args.adam_eps)
+    self.optimiser = optim.Adam(self.online_net.parameters(), lr=args.learning_rate, eps=args.adam_eps)
 
   # Resets noisy weights in all linear layers (of online net only)
   def reset_noise(self):
@@ -81,6 +94,7 @@ class Agent():
     loss = -torch.sum(m * log_ps_a, 1)  # Cross-entropy loss (minimises DKL(m||p(s_t, a_t)))
     self.online_net.zero_grad()
     (weights * loss).mean().backward()  # Backpropagate importance-weighted minibatch loss
+    clip_grad_norm_(self.online_net.parameters(), self.norm_clip)  # Clip gradients by L2 norm
     self.optimiser.step()
 
     mem.update_priorities(idxs, loss.detach().cpu().numpy())  # Update priorities of sampled transitions
@@ -89,8 +103,8 @@ class Agent():
     self.target_net.load_state_dict(self.online_net.state_dict())
 
   # Save model parameters on current device (don't move model between devices)
-  def save(self, path):
-    torch.save(self.online_net.state_dict(), os.path.join(path, 'model.pth'))
+  def save(self, path, name='model.pth'):
+    torch.save(self.online_net.state_dict(), os.path.join(path, name))
 
   # Evaluates Q-value based on single state (no batch)
   def evaluate_q(self, state):
