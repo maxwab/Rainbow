@@ -59,7 +59,7 @@ parser.add_argument('--enable-cudnn', action='store_true', help='Enable cuDNN (f
 # Added by me
 parser.add_argument('--tmpdir', type=str, default='./', help='Path to save outputs')
 parser.add_argument('--finaldir', type=str, default='./', help='Path to save outputs')
-parser.add_argument('--checkpoint-interval', default=0, help='How often to checkpoint the model, defaults to 0 (never checkpoint)')
+parser.add_argument('--checkpoint-interval', type=int, default=0, help='How often to checkpoint the model, defaults to 0 (never checkpoint)')
 parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t zip the memory file. Not recommended (zipping is a bit slower and much, much smaller)')
 
 
@@ -116,10 +116,10 @@ def load_memory(memory_path, disable_bzip):
 def save_memory(memory, memory_path, disable_bzip):
   if disable_bzip:
     with open(memory_path, 'wb') as pickle_file:
-      pickle.dump(memory, pickle_file)
+      pickle.dump(memory, pickle_file, protocol=4)
   else:
     with bz2.open(memory_path, 'wb') as zipped_pickle_file:
-      pickle.dump(memory, zipped_pickle_file)
+      pickle.dump(memory, zipped_pickle_file, protocol=4)
 
 
 # Environment
@@ -131,10 +131,12 @@ action_space = env.action_space()
 dqn = Agent(args, env)
 
 # If a model is provided, and evaluate is false, presumably we want to resume, so try to load memory
-if ckptdir.exists() and args.ckpt_freq and not args.evaluate:
+if ckptdir.exists() and args.checkpoint_interval and not args.evaluate:
   mem = load_memory(ckptdir / 'mem.pkl', args.disable_bzip_memory)
   ckpt = torch.load(ckptdir / 'last_ckpt.tar')
+  dqn.online_net.load_state_dict(ckpt['online_net'])
   T_init = ckpt['T'] + 1
+  log(f"Model successfully loaded at T={T_init}")
 else:
   mem = ReplayMemory(args, args.memory_capacity)
   T_init = 0
@@ -189,21 +191,18 @@ else:
         log('T = ' + str(T) + ' / ' + str(args.T_max) + ' | Avg. reward: ' + str(avg_reward) + ' | Avg. Q: ' + str(avg_Q))
         dqn.train()  # Set DQN (online network) back to training mode
 
-        # If memory path provided, save it
-        if args.memory is not None:
-          save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
-
       # Update target network
       if T % args.target_update == 0:
         dqn.update_target_net()
 
       # Checkpoint the network
-      if not args.checkpoint_interval and (T % args.checkpoint_interval == 0) and T:
+      if args.checkpoint_interval and (T % args.checkpoint_interval == 0) and T:
         ckptdir.mkdir(parents=True, exist_ok=True)
         torch.save({
-          'T': T
+          'T': T,
+          'online_net': dqn.online_net.state_dict()
         }, ckptdir / 'last_ckpt.tar')
-        dqn.save(ckptdir / 'checkpoint.pth')
+        save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
         save_weights(args, ckptdir)  # Also copy the weights toward the ckptdir.
         log("Checkpoint successfully saved")
 
@@ -216,7 +215,7 @@ else:
 env.close()
 
 # Copy intermediate results to finaldir.
-dqn.save(ckptdir / 'final_dqn.pt')
+dqn.save(ckptdir, 'final_dqn.pt')
 save_weights(args, ckptdir)
 shutil.copytree(ckptdir, args.finaldir)
 if (args.tmpdir / 'results').exists():
