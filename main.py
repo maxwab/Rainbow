@@ -75,20 +75,25 @@ args.tmpdir.mkdir(parents=True, exist_ok=True)
 ckptdir = Path(args.finaldir) / 'running' / args.hex
 args.finaldir = Path(args.finaldir) / f"{str(datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))}_{args.hex}"
 
-def save_weights(args, ckptdir):  
+def save_tmpdir_to_ckptdir(args, results_dir, ckptdir):  
   weights_files = args.tmpdir.glob('pen_weights_*.pt')
   for fpath in weights_files:
     if not (ckptdir / fpath.name).exists():
       shutil.copyfile(fpath, ckptdir / fpath.name)
-
+  
+  results_files = results_dir.glob('*.*')
+  (ckptdir / 'results').mkdir(parents=True, exist_ok=True)
+  for fpath in results_files:
+    if not (ckptdir / 'results' / fpath.name).exists():
+      shutil.copyfile(fpath, ckptdir / 'results' / fpath.name)
 
 # Setup
 print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
   print(' ' * 26 + k + ': ' + str(v))
-results_dir = os.path.join('results', args.id)
-if not os.path.exists(results_dir):
-  os.makedirs(results_dir)
+results_dir = args.tmpdir / 'results'
+results_dir.mkdir(exist_ok=True, parents=True)
+
 metrics = {'steps': [], 'rewards': [], 'Qs': [], 'best_avg_reward': -float('inf')}
 np.random.seed(args.seed)
 torch.manual_seed(np.random.randint(1, 10000))
@@ -138,8 +143,16 @@ if ckptdir.exists() and args.checkpoint_interval and not args.evaluate:
   T_init = ckpt['T'] + 1
   log(f"Model successfully loaded at T={T_init}")
 else:
+  ckptdir.mkdir(exist_ok=True, parents=True)
   mem = ReplayMemory(args, args.memory_capacity)
-  T_init = 0
+  T, T_init = 0, 0
+  # Save initial version of the model
+  torch.save({
+          'T': T,
+          'online_net': dqn.online_net.state_dict()
+        }, ckptdir / 'last_ckpt.tar')
+  save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
+  log("Checkpoint successfully saved")
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
 
@@ -196,14 +209,13 @@ else:
         dqn.update_target_net()
 
       # Checkpoint the network
-      if args.checkpoint_interval and (T % args.checkpoint_interval == 0) and T:
-        ckptdir.mkdir(parents=True, exist_ok=True)
+      if args.checkpoint_interval and (T % args.checkpoint_interval == 0):
         torch.save({
           'T': T,
           'online_net': dqn.online_net.state_dict()
         }, ckptdir / 'last_ckpt.tar')
         save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
-        save_weights(args, ckptdir)  # Also copy the weights toward the ckptdir.
+        save_tmpdir_to_ckptdir(args, results_dir, ckptdir)  # Also copy the weights toward the ckptdir.
         log("Checkpoint successfully saved")
 
     state = next_state
@@ -216,10 +228,8 @@ env.close()
 
 # Copy intermediate results to finaldir.
 dqn.save(ckptdir, 'final_dqn.pt')
-save_weights(args, ckptdir)
+save_tmpdir_to_ckptdir(args, results_dir, ckptdir)
 shutil.copytree(ckptdir, args.finaldir)
-if (args.tmpdir / 'results').exists():
-  shutil.copytree(args.tmpdir / 'results', args.finaldir / 'results')
 
 # Finally remove the intermed. folders
 shutil.rmtree(ckptdir)
