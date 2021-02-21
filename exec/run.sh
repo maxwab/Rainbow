@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=rrg-bengioy-ad                        # Yoshua pays for your job
 #SBATCH --ntasks=2                                      # Ask for 2 tasks
-#SBATCH --cpus-per-task=8                               # Ask for 8 CPUs (2 runs)
+#SBATCH --cpus-per-task=4                               # Ask for 8 CPUs (2 runs)
 #SBATCH --gres=gpu:1                                    # Ask for 1 GPU (enough for 2 runs)
 #SBATCH --mem=32G                                       # Ask for 32 GB of RAM
 #SBATCH --time=11:59:00                                 # The job will run for 12 hours
@@ -15,11 +15,11 @@ export CODE_FOLDER="Rainbow"
 module load python/3.6
 virtualenv --no-download $SLURM_TMPDIR/rl
 source $SLURM_TMPDIR/rl/bin/activate
-pip install --no-index $HOME/dev/$CODE_FOLDER/requirements.txt
+python -m pip install --no-index -r $HOME/dev/$CODE_FOLDER/requirements.txt
 
 # 4. Launch your job, tell it to save the model in $SLURM_TMPDIR
 #    and look for the dataset into $SLURM_TMPDIR
 cd $HOME/dev/$CODE_FOLDER
-srun -l --multi-prog 2games.conf
+srun -l --multi-prog exec/2games.conf
 
 # 5. Copy whatever you want to save on $SCRATCH -> Done in the python script
