@@ -16,7 +16,7 @@ from tqdm import trange
 
 from agent import Agent
 from env import Env
-from memory import ReplayMemory
+from memory import ReplayMemory, save_mem, load_mem
 from test import test
 
 
@@ -137,7 +137,8 @@ dqn = Agent(args, env)
 
 # If a model is provided, and evaluate is false, presumably we want to resume, so try to load memory
 if ckptdir.exists() and args.checkpoint_interval and not args.evaluate:
-  mem = load_memory(ckptdir / 'mem.pkl', args.disable_bzip_memory)
+  mem = ReplayMemory(args, args.memory_capacity)
+  mem = load_mem(mem, ckptdir)
   ckpt = torch.load(ckptdir / 'last_ckpt.tar')
   dqn.online_net.load_state_dict(ckpt['online_net'])
   T_init = ckpt['T'] + 1
@@ -151,7 +152,7 @@ else:
           'T': T,
           'online_net': dqn.online_net.state_dict()
         }, ckptdir / 'last_ckpt.tar')
-  save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
+  save_mem(mem, ckptdir)
   log("Checkpoint successfully saved")
 
 priority_weight_increase = (1 - args.priority_weight) / (args.T_max - args.learn_start)
@@ -214,7 +215,7 @@ else:
           'T': T,
           'online_net': dqn.online_net.state_dict()
         }, ckptdir / 'last_ckpt.tar')
-        save_memory(mem, ckptdir / 'mem.pkl', args.disable_bzip_memory)
+        save_mem(mem, ckptdir)
         save_tmpdir_to_ckptdir(args, results_dir, ckptdir)  # Also copy the weights toward the ckptdir.
         log("Checkpoint successfully saved")
 
