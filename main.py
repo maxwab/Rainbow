@@ -66,7 +66,7 @@ parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t z
 # Creating an id for the run
 args = parser.parse_args()
 ba = bytearray(str(args), encoding='utf8')
-h = blake2b(digest_size=20)
+h = blake2b(ba, digest_size=20)
 args.hex = h.hexdigest()
 
 # Logging, checkpointing and IO management
