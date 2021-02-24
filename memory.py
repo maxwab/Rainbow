@@ -2,6 +2,7 @@
 from __future__ import division
 import numpy as np
 import torch
+import pickle
 
 
 Transition_dtype = np.dtype([('timestep', np.int32), ('state', np.uint8, (84, 84)), ('action', np.int32), ('reward', np.float32), ('nonterminal', np.bool_)])
@@ -178,3 +179,40 @@ class ReplayMemory():
     return state
 
   next = __next__  # Alias __next__ for Python 2 compatibility
+
+
+# def save_mem(mem, p):
+#   # Looping over the attributes of mem, keep non callable.
+#   mem_dic = {a: getattr(mem, a) for a in filter(lambda x: x != 'transitions', dir(mem)) if not a.startswith('__') and not callable(getattr(mem, a))}
+#   # Now the segment tree
+#   transitions_dic = {a: getattr(mem.transitions, a) for a in filter(lambda x: x not in ['data', 'sum_tree'], dir(mem.transitions)) if not a.startswith('__') and not callable(getattr(mem.transitions, a))}
+#   # Save the dicts
+#   with open(p / 'mem_dict.pkl', 'wb') as fd:
+#     pickle.dump(mem_dic, fd)
+#   with open(p / 'transitions_dict.pkl', 'wb') as fd:
+#     pickle.dump(transitions_dic, fd)
+
+#   # Remaining: the datasets
+#   with bz2f = h5py.File(p / 'mem_data.h5', 'w')
+#   f.create_dataset("data", data=mem.transitions.data)
+#   f.create_dataset("sum_tree", data=mem.transitions.sum_tree)
+#   f.close()
+
+
+# def load_mem(mem, p):
+#   # Load the dict and fill it in mem
+#   with open(p / 'mem_dict.pkl', 'rb') as fd:
+#     mem_dic = pickle.load(fd)
+#   for k, v in mem_dic.items():
+#     setattr(mem, k, v)
+
+#   with open(p / 'transitions_dict.pkl', 'rb') as fd:
+#     transitions_dic = pickle.load(fd)
+#   for k, v in transitions_dic.items():
+#     setattr(mem_dic.transitions, k, v)
+
+#   # Remaining: the datasets
+#   f = h5py.File(p / 'mem_data.h5', 'r')
+#   mem_dic.transitions.data = f['data']
+#   mem_dic.transitions.sum_tree = f['sum_tree']
+#   f.close()
