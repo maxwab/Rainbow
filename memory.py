@@ -12,13 +12,14 @@ blank_trans = (0, np.zeros((84, 84), dtype=np.uint8), 0, 0.0, False)
 
 # Segment tree data structure where parent node values are sum/max of children node values
 class SegmentTree():
-  def __init__(self, size):
+  def __init__(self, size, build=True):
     self.index = 0
     self.size = size
     self.full = False  # Used to track actual capacity
     self.tree_start = 2**(size-1).bit_length()-1  # Put all used node leaves on last tree level
-    self.sum_tree = np.zeros((self.tree_start + self.size,), dtype=np.float32)
-    self.data = np.array([blank_trans] * size, dtype=Transition_dtype)  # Build structured array
+    if build:
+      self.sum_tree = np.zeros((self.tree_start + self.size,), dtype=np.float32)
+      self.data = np.array([blank_trans] * size, dtype=Transition_dtype)  # Build structured array
     self.max = 1  # Initial max value to return (1 = 1^ω)
 
   # Updates nodes values from current tree
@@ -91,7 +92,7 @@ class SegmentTree():
     return self.sum_tree[0]
 
 class ReplayMemory():
-  def __init__(self, args, capacity):
+  def __init__(self, args, capacity, build=True):
     self.device = args.device
     self.capacity = capacity
     self.history = args.history_length
@@ -101,7 +102,7 @@ class ReplayMemory():
     self.priority_exponent = args.priority_exponent
     self.t = 0  # Internal episode timestep counter
     self.n_step_scaling = torch.tensor([self.discount ** i for i in range(self.n)], dtype=torch.float32, device=self.device)  # Discount-scaling vector for n-step returns
-    self.transitions = SegmentTree(capacity)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
+    self.transitions = SegmentTree(capacity, build=build)  # Store transitions in a wrap-around cyclic buffer within a sum tree for querying priorities
 
   # Adds state and action at time t, reward and terminal at time t + 1
   def append(self, state, action, reward, terminal):

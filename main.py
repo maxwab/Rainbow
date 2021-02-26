@@ -142,7 +142,7 @@ dqn = Agent(args, env)
 
 # If a model is provided, and evaluate is false, presumably we want to resume, so try to load memory
 if ckptdir.exists() and args.checkpoint_interval and not args.evaluate:
-  mem = ReplayMemory(args, args.memory_capacity)
+  mem = ReplayMemory(args, args.memory_capacity, build=False)
   mem = load_mem(mem, ckptdir)
   ckpt = torch.load(ckptdir / 'last_ckpt.tar')
   dqn.online_net.load_state_dict(ckpt['online_net'])
