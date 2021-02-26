@@ -5,6 +5,8 @@ import bz2
 from datetime import datetime
 import os
 import pickle
+import json
+from copy import deepcopy
 
 import atari_py
 import numpy as np
@@ -65,7 +67,10 @@ parser.add_argument('--disable-bzip-memory', action='store_true', help='Don\'t z
 
 # Creating an id for the run
 args = parser.parse_args()
-ba = bytearray(str(args), encoding='utf8')
+hexable_args = deepcopy(args)
+for arg_to_delete in ['tmpdir', 'finaldir']:
+  delattr(hexable_args, arg_to_delete)
+ba = bytearray(str(hexable_args), encoding='utf8')
 h = blake2b(ba, digest_size=20)
 args.hex = h.hexdigest()
 
@@ -88,9 +93,9 @@ def save_tmpdir_to_ckptdir(args, results_dir, ckptdir):
       shutil.copyfile(fpath, ckptdir / 'results' / fpath.name)
 
 # Setup
-print(' ' * 26 + 'Options')
+print(' ' * 26 + 'Options', flush=True)
 for k, v in vars(args).items():
-  print(' ' * 26 + k + ': ' + str(v))
+  print(' ' * 26 + k + ': ' + str(v), flush=True)
 results_dir = args.tmpdir / 'results'
 results_dir.mkdir(exist_ok=True, parents=True)
 
@@ -106,7 +111,7 @@ else:
 
 # Simple ISO 8601 timestamped logger
 def log(s):
-  print('[' + str(datetime.now().strftime('%Y-%m-%dT%H:%M:%S')) + '] ' + s)
+  print('[' + str(datetime.now().strftime('%Y-%m-%dT%H:%M:%S')) + '] ' + s, flush=True)
 
 
 def load_memory(memory_path, disable_bzip):
@@ -145,6 +150,10 @@ if ckptdir.exists() and args.checkpoint_interval and not args.evaluate:
   log(f"Model successfully loaded at T={T_init}")
 else:
   ckptdir.mkdir(exist_ok=True, parents=True)
+  # Drop the run args
+  with open(ckptdir / 'args.json', 'wt') as fd:
+    json.dump({k:str(v) for k, v in vars(args).items()}, fd, indent=4)
+
   mem = ReplayMemory(args, args.memory_capacity)
   T, T_init = 0, 0
   # Save initial version of the model
@@ -174,7 +183,7 @@ while T < args.evaluation_size:
 if args.evaluate:
   dqn.eval()  # Set DQN (online network) to evaluation mode
   avg_reward, avg_Q = test(args, 0, dqn, val_mem, metrics, results_dir, evaluate=True)  # Test
-  print('Avg. reward: ' + str(avg_reward) + ' | Avg. Q: ' + str(avg_Q))
+  log('Avg. reward: ' + str(avg_reward) + ' | Avg. Q: ' + str(avg_Q))
 else:
   # Training loop
   dqn.train()
